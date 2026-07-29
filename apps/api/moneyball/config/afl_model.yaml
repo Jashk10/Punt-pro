@@ -1,0 +1,35 @@
+# AFL model constants. Bump config_version whenever a value here changes —
+# model_versions.config_hash is derived from this file's contents, so a
+# version bump is what makes a re-run distinguishable from a stale one.
+#
+# NOTE: margin_per_elo_point, hga.league_default_points, and the
+# margin_distribution priors are placeholder starting values, not fitted
+# constants — this environment has no network access to pull real historical
+# AFL results to calibrate them against (see README). Re-fit these against
+# real data (walk-forward, out-of-sample) before trusting the model's
+# probabilities for anything real.
+config_version: "1"
+
+elo:
+  initial_rating: 1500.0
+  k_factor: 32.0
+  mov_multiplier_base: 2.2
+  mov_multiplier_scale: 0.001
+  margin_per_elo_point: 0.6 # AFL points per 1 Elo rating point of difference
+
+hga:
+  shrinkage_games: 20 # empirical Bayes prior sample size for team-venue HGA
+  league_default_points: 6.0 # fallback HGA before any team-venue history exists
+
+margin_distribution:
+  residual_std_prior: 37.0 # typical AFL margin std is roughly 35-40 points
+  residual_std_shrinkage_games: 30
+
+total_distribution:
+  mean_prior: 175.0 # typical combined final score
+  std_prior: 25.0
+  shrinkage_games: 30
+
+simulation:
+  default_n_sims: 10000
+  headline_n_sims: 100000

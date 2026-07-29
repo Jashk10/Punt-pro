@@ -3,9 +3,10 @@
 Quant research stack for MLB, NBA, AFL, and Soccer. Read-only odds, manual
 staking, no auto-bet placement. Base currency: **AUD**.
 
-Phase 1 (repo scaffold, Docker Compose, DB schema/migrations, demo seed data)
-and Phase 2 (AFL data ingestion) are done, per the agreed build order.
-Simulation/modelling logic doesn't exist yet — that's Phase 3.
+Phases 1-3 are done, per the agreed build order: repo scaffold, AFL data
+ingestion, and an AFL simulation model with a calibration/backtest harness.
+NBA, Soccer, and MLB don't exist yet — AFL goes first per the build order,
+and the other sports land in Phase 6.
 
 ## Stack
 
@@ -75,6 +76,73 @@ curl -X POST http://localhost:8000/admin/ingestion/afl/sync \
 This dispatches a Celery task (`moneyball.ingestion.sync_afl`) — a worker
 must be running (`docker compose up` starts one). No auth gate on this
 endpoint yet; RBAC lands with the admin panel in Phase 9.
+
+## AFL model + backtest (Phase 3)
+
+`moneyball/models/afl/` implements the `SportModel` interface
+(`moneyball/models/base.py`) with a margin-of-victory Elo rating system:
+
+- **Ratings**: standard Elo, K-factor scaled by an MOV multiplier (bigger
+  margin = bigger update, dampened when the win was already expected) —
+  `moneyball/models/afl/elo.py`.
+- **Home ground advantage**: team-and-venue-specific, estimated via
+  empirical Bayes shrinkage toward a league-wide default (a team/venue pair
+  with little history leans on the prior; one with a long home record, e.g.
+  Geelong at GMHBA, gets its own estimate).
+- **Simulation**: Monte Carlo margin + total draws (independent Normal,
+  empirical Bayes-shrunk mean/std) via `moneyball/simulation/engine.py`,
+  which also reports Monte Carlo standard error on every headline
+  probability per spec.
+- **Not yet implemented**: the full shot-volume × accuracy decomposition
+  from the original spec needs contested-possession/inside-50/clearance/xScore
+  data that Squiggle's basic API doesn't provide (AFL Tables would). Margin/
+  total are currently drawn independently, which is a known simplification —
+  real blowouts skew the margin/total relationship. Both are documented as
+  upgrade paths in `moneyball/models/afl/model.py`'s docstring, not silently
+  glossed over.
+
+**Calibration harness** (`moneyball/quant/calibration.py`, sport-agnostic):
+Brier score, log loss, expected calibration error, reliability bins, and the
+Green/Amber/Red `model_health` badge — all with known-answer unit tests.
+
+**Backtest** (`moneyball/backtest/walkforward.py`): strict walk-forward —
+each prediction only ever sees model state built from strictly earlier
+fixtures. Two leakage tests enforce this directly: mutating a later result
+must not change any earlier prediction, and truncating future fixtures must
+not change any past prediction (`tests/backtest/test_walkforward.py`). No
+ROI/CLV yet — that needs real historical closing odds, which is Phase 4.
+
+Run it against ingested data:
+
+```bash
+make backtest-afl start=2022-01-01 end=2024-12-31
+```
+
+This prints a calibration report (Brier score + bootstrap 95% CI, log loss,
+ECE, model_health, reliability bins) and persists it to `backtest_runs` /
+`calibration_bins`.
+
+### The actual checkpoint this build order asks for hasn't happened yet
+
+The build order says: run the backtest, stop, and show real calibration
+numbers before building more UI. **I can't do that from this environment** —
+the sandbox has no network access to Squiggle (see Phase 2 tradeoffs below),
+so there is no real historical AFL data to backtest against here. Everything
+above is verified against known-answer unit tests and a synthetic,
+Elo-shaped dataset (to confirm the walk-forward/fitting machinery actually
+learns something, not that the real model is any good) — see
+`tests/backtest/test_walkforward.py` and `tests/models/afl/`. I also ran the
+full pipeline (DB query → backtest → calibration → persistence) once against
+synthetic fixtures inserted directly into the dev database to confirm it
+works end-to-end against the real schema, then deleted that data — it's not
+in this repo.
+
+**Before any AFL UI gets built, run `make backtest-afl` yourself against real
+ingested seasons and look at the actual numbers.** If `model_health` comes
+back red or the reliability bins are badly off the diagonal, that's the
+signal to retune `apps/api/moneyball/config/afl_model.yaml` (all the Elo/HGA/
+distribution constants are placeholder starting values, explicitly flagged
+as such in that file) before building the fixture deep-dive UI in Phase 5.
 
 ## Known tradeoffs from Phase 1 verification
 

@@ -1,4 +1,4 @@
-.PHONY: up down build logs db migrate migrate-new seed test-api test-web fmt
+.PHONY: up down build logs db migrate migrate-new seed backtest-afl test-api test-web fmt
 
 up:
 	docker compose up -d --build
@@ -24,6 +24,10 @@ migrate-new:
 
 seed:
 	docker compose exec api python -m scripts.seed_demo_slates
+
+# Usage: make backtest-afl start=2022-01-01 end=2024-12-31
+backtest-afl:
+	docker compose exec api python -m scripts.run_afl_backtest --start $(start) --end $(end)
 
 test-api:
 	docker compose exec api pytest -q
