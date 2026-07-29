@@ -24,6 +24,7 @@ from moneyball.db.models import (
     Venue,
 )
 from moneyball.db.session import SessionLocal
+from moneyball.db.utils import get_or_create
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -57,17 +58,6 @@ DEMO_ODDS = {
     ("New York Yankees", "Boston Red Sox"): (1.55, 2.45),
     ("LA Dodgers", "San Francisco Giants"): (1.40, 2.95),
 }
-
-
-def get_or_create(db: Session, model, defaults: dict | None = None, **kwargs):
-    instance = db.query(model).filter_by(**kwargs).one_or_none()
-    if instance:
-        return instance, False
-    params = {**kwargs, **(defaults or {})}
-    instance = model(**params)
-    db.add(instance)
-    db.flush()
-    return instance, True
 
 
 def seed_roles_and_admin(db: Session) -> None:

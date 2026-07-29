@@ -3,9 +3,9 @@
 Quant research stack for MLB, NBA, AFL, and Soccer. Read-only odds, manual
 staking, no auto-bet placement. Base currency: **AUD**.
 
-This is **Phase 1** of the build (per the agreed build order): repo scaffold,
-Docker Compose, DB schema/migrations, and demo seed data. No ingestion,
-simulation, or modelling logic exists yet — those land in Phases 2+.
+Phase 1 (repo scaffold, Docker Compose, DB schema/migrations, demo seed data)
+and Phase 2 (AFL data ingestion) are done, per the agreed build order.
+Simulation/modelling logic doesn't exist yet — that's Phase 3.
 
 ## Stack
 
@@ -56,6 +56,26 @@ any keys are configured. The Odds API free tier (500 req/month) is the
 binding constraint for live odds — see the ingestion polling design notes
 once Phase 4 lands.
 
+## AFL ingestion (Phase 2)
+
+`moneyball/ingestion/afl/client.py` wraps the Squiggle API (teams, games,
+tips), self-throttled to 1 req/sec with the required descriptive
+`User-Agent` (`SQUIGGLE_USER_AGENT` in `.env`). `moneyball/ingestion/afl/sync.py`
+upserts teams and fixtures idempotently, matching fixtures by Squiggle's own
+game id (stored in `fixtures.external_ids`) so re-running against an
+in-progress round updates scores/status in place instead of duplicating.
+
+Trigger a sync manually:
+
+```bash
+curl -X POST http://localhost:8000/admin/ingestion/afl/sync \
+  -H "Content-Type: application/json" -d '{"year": 2026, "round": 1}'
+```
+
+This dispatches a Celery task (`moneyball.ingestion.sync_afl`) — a worker
+must be running (`docker compose up` starts one). No auth gate on this
+endpoint yet; RBAC lands with the admin panel in Phase 9.
+
 ## Known tradeoffs from Phase 1 verification
 
 - **Next.js pinned to 14.2.35** (latest patched release on the 14.x line the
@@ -73,3 +93,15 @@ once Phase 4 lands.
   environment (no TimescaleDB extension available outside the
   `timescale/timescaledb` Docker image). It will run automatically against
   the real Postgres container the first time you run `make migrate`.
+
+## Known tradeoffs from Phase 2 verification
+
+- This sandbox's egress policy also blocks outbound access to
+  `api.squiggle.com.au` (confirmed via the proxy's policy-denial log, same
+  class of restriction as the Docker registry block above — not a bug in the
+  client). `SquiggleClient` and the sync logic are covered by unit tests that
+  mock the HTTP layer (`respx`) and exercise the upsert logic against a real
+  local Postgres, but **no live pull against the real Squiggle API has been
+  done from this environment**. Run a real `POST /admin/ingestion/afl/sync`
+  once you're somewhere with internet access to confirm the response shape
+  matches what `client.py` assumes (documented inline in that file).
